@@ -10,7 +10,7 @@
 declare(strict_types=1);
 
 // ── 1. Absolute paths ─────────────────────────────────────────────────────────
-define('ROOT_PATH', dirname(__DIR__));
+define('ROOT_PATH', __DIR__);
 
 // ── 2. Load configuration (also loads .env) ───────────────────────────────────
 require ROOT_PATH . '/config/config.php';

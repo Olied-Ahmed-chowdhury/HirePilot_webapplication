@@ -10,6 +10,7 @@ namespace HirePilot\Controllers;
 
 use HirePilot\Core\Auth;
 use HirePilot\Core\Database;
+use HirePilot\Models\User;
 use HirePilot\Services\JobMatchingService;
 
 class DashboardController
@@ -22,56 +23,65 @@ class DashboardController
         $this->db = Database::getInstance();
     }
 
-    // ── GET /dashboard ────────────────────────────────────────────────────────
     public function index(array $params = []): void
     {
-        $userId = Auth::id();
-        $user   = $this->db->fetchOne("SELECT * FROM users WHERE id = :id", [':id' => $userId]);
+        $userId    = Auth::id();
+        $userModel = new User();
+        $user      = $userModel->findById($userId);
 
-        // Key Metrics
-        $totalApps = (int)($this->db->fetchOne(
+        $totalApps = (int) ($this->db->fetchOne(
             "SELECT COUNT(*) AS c FROM applications WHERE user_id = :uid",
             [':uid' => $userId]
         )['c'] ?? 0);
 
-        $activeApps = (int)($this->db->fetchOne(
+        $activeApps = (int) ($this->db->fetchOne(
             "SELECT COUNT(*) AS c FROM applications WHERE user_id = :uid AND status IN ('applied','under_review','interview_scheduled')",
             [':uid' => $userId]
         )['c'] ?? 0);
 
-        $interviews = (int)($this->db->fetchOne(
+        $interviews = (int) ($this->db->fetchOne(
             "SELECT COUNT(*) AS c FROM applications WHERE user_id = :uid AND status = 'interview_scheduled'",
             [':uid' => $userId]
         )['c'] ?? 0);
 
-        $aiDraftsCount = (int)($this->db->fetchOne(
+        $aiDraftsCount = (int) ($this->db->fetchOne(
             "SELECT COUNT(*) AS c FROM email_drafts WHERE user_id = :uid",
             [':uid' => $userId]
         )['c'] ?? 0);
 
-        // Recent Applications
         $recentApps = $this->db->fetchAll(
-            "SELECT a.*, j.title AS job_title, j.company AS job_company, j.location AS job_location, j.job_type
+            "SELECT a.*,
+                    COALESCE(j.title, a.job_title) AS job_title,
+                    COALESCE(j.company, a.company_name) AS job_company,
+                    j.location AS job_location,
+                    j.job_type
              FROM applications a
-             JOIN jobs j ON a.job_id = j.id
+             LEFT JOIN jobs j ON a.job_id = j.id
              WHERE a.user_id = :uid
              ORDER BY a.updated_at DESC
              LIMIT 5",
             [':uid' => $userId]
         );
 
-        // Recommended / Matching Jobs
         $rawJobs = $this->db->fetchAll(
-            "SELECT * FROM jobs WHERE status = 'active' ORDER BY created_at DESC LIMIT 10"
+            "SELECT * FROM jobs WHERE status = 'active' ORDER BY created_at DESC LIMIT 12"
         );
 
         $matchingService = new JobMatchingService();
-        $userSkills = !empty($user['skills']) ? (is_string($user['skills']) ? json_decode($user['skills'], true) : $user['skills']) : [];
-        $recommendedJobs = $matchingService->rankJobs($rawJobs, $userSkills ?: [], $user['remote_pref'] ?? 'any');
+        $userSkills      = !empty($user['skills'])
+            ? (is_string($user['skills']) ? (json_decode($user['skills'], true) ?? []) : $user['skills'])
+            : [];
+
+        $recommendedJobs = $matchingService->rankJobs(
+            $rawJobs,
+            $userSkills,
+            $user['work_preference'] ?? 'any'
+        );
         $topJobs = array_slice($recommendedJobs, 0, 4);
 
-        $pageTitle = 'Dashboard';
-        $navbarTitle = 'Dashboard Overview';
+        $dbDriver    = strtoupper($this->db->getDriver());
+        $pageTitle   = 'Dashboard';
+        $navbarTitle = 'Workspace Overview';
 
         ob_start();
         require VIEWS_PATH . '/dashboard/index.php';

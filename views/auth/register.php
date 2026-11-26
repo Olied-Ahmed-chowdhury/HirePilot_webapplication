@@ -1,6 +1,6 @@
 <?php
 /**
- * HirePilot AI — Register View
+ * HirePilot AI — Registration View
  * Author: Olied Ahmed Chowdhury (ID: 242-134-017, Batch: 7th)
  */
 
@@ -8,26 +8,13 @@ declare(strict_types=1);
 
 use HirePilot\Core\Csrf;
 ?>
-<div class="auth-logo d-lg-none">
-  <div class="auth-logo-icon">🚀</div>
-  <span class="fs-4 fw-800">HirePilot<span class="text-primary"> AI</span></span>
+<div class="d-flex align-items-center gap-2 mb-4 d-lg-none">
+  <div class="sidebar-brand-icon"><i class="bi bi-compass"></i></div>
+  <span class="fs-5 fw-bold">HirePilot AI</span>
 </div>
 
-<h2 class="auth-title">Create Account</h2>
-<p class="auth-subtitle">Get started with AI-driven job applications</p>
-
-<!-- Google OAuth Sign-Up -->
-<a href="<?= BASE_URL ?>/auth/google" class="btn-google mb-3">
-  <svg width="20" height="20" viewBox="0 0 48 48">
-    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-  </svg>
-  Sign up with Google
-</a>
-
-<div class="auth-divider">or register with email</div>
+<h2 class="auth-title">Create account</h2>
+<p class="auth-subtitle">Register to start tracking applications and matching jobs</p>
 
 <form action="<?= BASE_URL ?>/auth/register" method="POST" id="register-form">
   <?= Csrf::field() ?>
@@ -37,12 +24,12 @@ use HirePilot\Core\Csrf;
     <div class="input-group-icon">
       <i class="bi bi-person"></i>
       <input type="text" class="form-control" id="name" name="name"
-             placeholder="Olied Ahmed" required autofocus>
+             placeholder="Olied Ahmed Chowdhury" required autofocus>
     </div>
   </div>
 
   <div class="mb-3">
-    <label for="email" class="form-label">Email Address</label>
+    <label for="email" class="form-label">Email address</label>
     <div class="input-group-icon">
       <i class="bi bi-envelope"></i>
       <input type="email" class="form-control" id="email" name="email"
@@ -55,7 +42,7 @@ use HirePilot\Core\Csrf;
     <div class="input-group-icon">
       <i class="bi bi-lock"></i>
       <input type="password" class="form-control" id="password" name="password"
-             placeholder="At least 8 chars (1 upper, 1 number)" required autocomplete="new-password">
+             placeholder="Min 8 chars, 1 uppercase, 1 number" required autocomplete="new-password">
     </div>
   </div>
 
@@ -68,12 +55,12 @@ use HirePilot\Core\Csrf;
     </div>
   </div>
 
-  <button type="submit" class="btn btn-primary w-100 py-2 mt-2 mb-3" id="register-btn">
+  <button type="submit" class="btn btn-primary w-100 py-2 mt-1 mb-3">
     Create Account
   </button>
 </form>
 
 <p class="text-center text-muted small mb-0">
   Already have an account?
-  <a href="<?= BASE_URL ?>/auth/login" class="fw-bold">Sign in</a>
+  <a href="<?= BASE_URL ?>/auth/login" class="fw-semibold">Sign in</a>
 </p>

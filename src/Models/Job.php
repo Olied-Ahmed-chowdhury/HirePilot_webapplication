@@ -1,6 +1,6 @@
 <?php
 /**
- * HirePilot AI — Job Model
+ * HirePilot AI — Job Model (ANSI SQL: MySQL + SQLite)
  * Author: Olied Ahmed Chowdhury (ID: 242-134-017, Batch: 7th)
  */
 
@@ -40,54 +40,51 @@ class Job
         $this->db->execute("UPDATE jobs SET apply_count = apply_count + 1 WHERE id = :id", [':id' => $id]);
     }
 
-    /**
-     * Search and filter jobs with pagination.
-     */
-    public function search(array $filters = [], int $page = 1, int $perPage = 10): array
+    public function search(array $filters = [], int $page = 1, int $perPage = 9): array
     {
         $conditions = ["status = 'active'"];
         $params = [];
 
-        // Keyword search (title, company, description, requirements)
         if (!empty($filters['q'])) {
-            $conditions[] = "(title LIKE :q OR company LIKE :q OR description LIKE :q OR location LIKE :q)";
-            $params[':q'] = '%' . trim($filters['q']) . '%';
+            $conditions[] = "(title LIKE :q1 OR company LIKE :q2 OR description LIKE :q3 OR location LIKE :q4 OR skills_required LIKE :q5)";
+            $kw = '%' . trim((string) $filters['q']) . '%';
+            $params[':q1'] = $kw;
+            $params[':q2'] = $kw;
+            $params[':q3'] = $kw;
+            $params[':q4'] = $kw;
+            $params[':q5'] = $kw;
         }
 
-        // Job type
         if (!empty($filters['job_type'])) {
             $conditions[] = "job_type = :job_type";
             $params[':job_type'] = $filters['job_type'];
         }
 
-        // Experience level
         if (!empty($filters['experience_level'])) {
             $conditions[] = "experience_level = :experience_level";
             $params[':experience_level'] = $filters['experience_level'];
         }
 
-        // Remote only
         if (isset($filters['is_remote']) && $filters['is_remote'] !== '') {
             $conditions[] = "is_remote = :is_remote";
             $params[':is_remote'] = (int) $filters['is_remote'];
         }
 
-        // Location
         if (!empty($filters['location'])) {
             $conditions[] = "location LIKE :location";
-            $params[':location'] = '%' . trim($filters['location']) . '%';
+            $params[':location'] = '%' . trim((string) $filters['location']) . '%';
         }
 
         $whereClause = implode(' AND ', $conditions);
 
-        // Count total matching
         $countSql = "SELECT COUNT(*) AS total FROM jobs WHERE {$whereClause}";
-        $total = (int)($this->db->fetchOne($countSql, $params)['total'] ?? 0);
+        $total = (int) ($this->db->fetchOne($countSql, $params)['total'] ?? 0);
 
-        // Fetch paginated jobs
-        $offset = max(0, ($page - 1) * $perPage);
+        $page    = max(1, $page);
+        $perPage = max(1, min(50, $perPage));
+        $offset  = ($page - 1) * $perPage;
+
         $fetchSql = "SELECT * FROM jobs WHERE {$whereClause} ORDER BY created_at DESC LIMIT {$perPage} OFFSET {$offset}";
-
         $jobs = $this->db->fetchAll($fetchSql, $params);
 
         return [
@@ -95,7 +92,7 @@ class Job
             'total'       => $total,
             'page'        => $page,
             'per_page'    => $perPage,
-            'total_pages' => (int) ceil($total / $perPage),
+            'total_pages' => max(1, (int) ceil($total / $perPage)),
         ];
     }
 
@@ -103,18 +100,17 @@ class Job
     {
         $this->db->execute(
             "INSERT INTO jobs
-                (created_by, title, company, company_logo, location, is_remote, job_type,
+                (created_by, title, company, location, is_remote, job_type,
                  experience_level, salary_min, salary_max, salary_currency, description,
-                 requirements, benefits, skills_required, tags, application_url, deadline, status, created_at)
+                 requirements, benefits, skills_required, external_url, deadline, status, created_at)
              VALUES
-                (:created_by, :title, :company, :company_logo, :location, :is_remote, :job_type,
+                (:created_by, :title, :company, :location, :is_remote, :job_type,
                  :experience_level, :salary_min, :salary_max, :salary_currency, :description,
-                 :requirements, :benefits, :skills_required, :tags, :application_url, :deadline, :status, NOW())",
+                 :requirements, :benefits, :skills_required, :external_url, :deadline, :status, :created_at)",
             [
                 ':created_by'       => $data['created_by'],
                 ':title'            => $data['title'],
                 ':company'          => $data['company'],
-                ':company_logo'     => $data['company_logo'] ?? null,
                 ':location'         => $data['location'] ?? null,
                 ':is_remote'        => !empty($data['is_remote']) ? 1 : 0,
                 ':job_type'         => $data['job_type'] ?? 'full-time',
@@ -126,10 +122,10 @@ class Job
                 ':requirements'     => $data['requirements'] ?? null,
                 ':benefits'         => $data['benefits'] ?? null,
                 ':skills_required'  => $data['skills_required'] ?? null,
-                ':tags'             => $data['tags'] ?? null,
-                ':application_url'  => $data['application_url'] ?? null,
+                ':external_url'     => $data['external_url'] ?? null,
                 ':deadline'         => $data['deadline'] ?? null,
                 ':status'           => $data['status'] ?? 'active',
+                ':created_at'       => date('Y-m-d H:i:s'),
             ]
         );
 
@@ -142,10 +138,10 @@ class Job
         $params = [':id' => $id];
 
         $allowed = [
-            'title', 'company', 'company_logo', 'location', 'is_remote', 'job_type',
+            'title', 'company', 'location', 'is_remote', 'job_type',
             'experience_level', 'salary_min', 'salary_max', 'salary_currency',
-            'description', 'requirements', 'benefits', 'skills_required', 'tags',
-            'application_url', 'deadline', 'status'
+            'description', 'requirements', 'benefits', 'skills_required',
+            'external_url', 'deadline', 'status'
         ];
 
         foreach ($allowed as $f) {
@@ -170,6 +166,6 @@ class Job
 
     public function count(): int
     {
-        return (int)($this->db->fetchOne("SELECT COUNT(*) AS c FROM jobs")['c'] ?? 0);
+        return (int) ($this->db->fetchOne("SELECT COUNT(*) AS c FROM jobs")['c'] ?? 0);
     }
 }

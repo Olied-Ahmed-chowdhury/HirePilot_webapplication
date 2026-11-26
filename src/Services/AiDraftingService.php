@@ -1,10 +1,7 @@
 <?php
 /**
- * HirePilot AI — AI Drafting Service Layer
+ * HirePilot AI — AI Drafting Service Layer (Groq / Grok Compatible)
  * Author: Olied Ahmed Chowdhury (ID: 242-134-017, Batch: 7th)
- *
- * Integrates with Grok (X.AI) or any OpenAI-compatible Chat Completions API.
- * Includes a rich, deterministic local mock fallback when API key is missing or offline.
  */
 
 declare(strict_types=1);
@@ -22,24 +19,14 @@ class AiDraftingService
 
     public function __construct()
     {
-        $this->provider    = (string) config('ai.provider', 'mock');
+        $this->provider    = (string) config('ai.provider', 'groq');
         $this->apiKey      = (string) config('ai.api_key', '');
-        $this->apiUrl      = (string) config('ai.api_url', 'https://api.x.ai/v1/chat/completions');
-        $this->model       = (string) config('ai.model', 'grok-beta');
+        $this->apiUrl      = (string) config('ai.api_url', 'https://api.groq.com/openai/v1/chat/completions');
+        $this->model       = (string) config('ai.model', 'llama-3.3-70b-versatile');
         $this->maxTokens   = (int) config('ai.max_tokens', 1200);
-        $this->temperature = (float) config('ai.temperature', 0.7);
+        $this->temperature = (float) config('ai.temperature', 0.6);
     }
 
-    /**
-     * Generate tailored application content (cover letter or email).
-     *
-     * @param array  $user       User profile details
-     * @param array  $job        Job listing details
-     * @param string $resumeText Text parsed from candidate's resume
-     * @param string $draftType  'cover_letter' | 'application_email'
-     * @param string $tone       'professional' | 'enthusiastic' | 'concise'
-     * @return array ['subject' => string, 'body' => string, 'model_used' => string, 'prompt' => string]
-     */
     public function generateDraft(
         array $user,
         array $job,
@@ -49,9 +36,8 @@ class AiDraftingService
     ): array {
         $prompt = $this->buildPrompt($user, $job, $resumeText, $draftType, $tone);
 
-        // If provider is set to grok/openai and API key is present, try live API call
-        if (($this->provider === 'grok' || $this->provider === 'openai') && !empty($this->apiKey)) {
-            $response = $this->callApi($prompt, $draftType);
+        if ($this->provider !== 'mock' && !empty($this->apiKey)) {
+            $response = $this->callApi($prompt, $job);
             if ($response !== null) {
                 return [
                     'subject'    => $response['subject'],
@@ -62,21 +48,17 @@ class AiDraftingService
             }
         }
 
-        // Deterministic fallback mock generation
-        return $this->generateLocalMock($user, $job, $resumeText, $draftType, $tone, $prompt);
+        return $this->generateLocalFallback($user, $job, $draftType, $prompt);
     }
 
-    /**
-     * Call Grok / OpenAI Chat Completions API via cURL.
-     */
-    private function callApi(string $prompt, string $draftType): ?array
+    private function callApi(string $prompt, array $job): ?array
     {
         $payload = [
             'model'       => $this->model,
             'messages'    => [
                 [
                     'role'    => 'system',
-                    'content' => 'You are HirePilot AI, an elite career coach and executive recruiter. You write persuasive, highly tailored, professional job applications that stand out to hiring managers. Output format: Start with "SUBJECT: [Your Subject Line]" on the first line, followed by two newlines, then the complete body text.',
+                    'content' => 'You are a senior career strategist writing concise, factual, tailored job application emails and cover letters. Avoid clichés and filler. Output format: Start line 1 with "SUBJECT: <subject line>", then a blank line, then the application text.',
                 ],
                 [
                     'role'    => 'user',
@@ -97,25 +79,25 @@ class AiDraftingService
                 'Authorization: Bearer ' . $this->apiKey,
             ],
             CURLOPT_TIMEOUT        => 25,
+            CURLOPT_CONNECTTIMEOUT => 8,
             CURLOPT_SSL_VERIFYPEER => true,
         ]);
 
         $result   = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        if ($httpCode !== 200 || !$result) {
+        if ($httpCode < 200 || $httpCode >= 300 || !$result) {
             return null;
         }
 
-        $data = json_decode((string)$result, true);
-        $content = $data['choices'][0]['message']['content'] ?? '';
-        if (empty($content)) {
+        $data    = json_decode((string) $result, true);
+        $content = trim((string) ($data['choices'][0]['message']['content'] ?? ''));
+        if ($content === '') {
             return null;
         }
 
-        // Parse subject and body
-        $subject = 'Application for ' . ($job['title'] ?? 'Role');
+        $subject = 'Application: ' . ($job['title'] ?? 'Position');
         $body    = $content;
 
         if (preg_match('/^SUBJECT:\s*(.+)$/mi', $content, $matches)) {
@@ -126,9 +108,6 @@ class AiDraftingService
         return ['subject' => $subject, 'body' => $body];
     }
 
-    /**
-     * Build the structured prompt for LLM.
-     */
     private function buildPrompt(
         array $user,
         array $job,
@@ -145,104 +124,47 @@ class AiDraftingService
             : '[]';
 
         $docType = $draftType === 'cover_letter' ? 'Cover Letter' : 'Direct Application Email';
+        $resumeExcerpt = mb_substr(trim($resumeText), 0, 2000);
 
         return <<<PROMPT
-Create an outstanding, highly tailored {$docType} with a {$tone} tone.
+Write a tailored {$docType} in a {$tone} tone.
 
-[CANDIDATE DETAILS]
-Name: {$user['name']}
-Email: {$user['email']}
-Current Headline: {$user['headline']}
-Target Role: {$user['target_role']}
-Experience: {$user['experience_yrs']} years
-Skills: {$skills}
-Location: {$user['location']}
-Resume Excerpt:
-{$resumeText}
+Candidate:
+- Name: {$user['name']}
+- Email: {$user['email']}
+- Headline: {$user['headline']}
+- Target Role: {$user['target_role']}
+- Experience: {$user['experience_yrs']} years
+- Skills: {$skills}
+- Resume Excerpt: {$resumeExcerpt}
 
-[JOB DETAILS]
-Job Title: {$job['title']}
-Company: {$job['company']}
-Location: {$job['location']}
-Job Type: {$job['job_type']}
-Required Skills: {$reqSkills}
-Description:
-{$job['description']}
-Requirements:
-{$job['requirements']}
-
-Format requirements:
-- Line 1: SUBJECT: [Tailored Subject Line]
-- Body: 3-4 structured paragraphs highlighting relevant accomplishments, skill alignment, passion for the company, and a clear call-to-action.
-- Sign off with candidate's full name.
+Target Role:
+- Title: {$job['title']}
+- Company: {$job['company']}
+- Location: {$job['location']}
+- Required Skills: {$reqSkills}
+- Description: {$job['description']}
+- Requirements: {$job['requirements']}
 PROMPT;
     }
 
-    /**
-     * Deterministic local fallback generator.
-     */
-    private function generateLocalMock(
-        array $user,
-        array $job,
-        string $resumeText,
-        string $draftType,
-        string $tone,
-        string $prompt
-    ): array {
-        $candidateName = $user['name'] ?? 'Candidate';
-        $companyName   = $job['company'] ?? 'the Hiring Team';
-        $jobTitle      = $job['title'] ?? 'the advertised position';
-        $headline      = $user['headline'] ?? 'Software Developer';
+    private function generateLocalFallback(array $user, array $job, string $draftType, string $prompt): array
+    {
+        $name    = $user['name'] ?? 'Candidate';
+        $company = $job['company'] ?? 'Hiring Team';
+        $title   = $job['title'] ?? 'Role';
+        $skills  = is_string($user['skills'] ?? '') ? (json_decode($user['skills'], true) ?? []) : ($user['skills'] ?? []);
+        $skillStr = !empty($skills) ? implode(', ', array_slice($skills, 0, 5)) : 'software engineering';
 
-        $skills = [];
-        if (!empty($user['skills'])) {
-            $skills = is_string($user['skills']) ? (json_decode($user['skills'], true) ?: []) : $user['skills'];
-        }
-        $primarySkillStr = !empty($skills) ? implode(', ', array_slice($skills, 0, 4)) : 'modern web development';
-
-        if ($draftType === 'application_email') {
-            $subject = "Application: {$jobTitle} - {$candidateName}";
-            $body = <<<BODY
-Dear Hiring Team at {$companyName},
-
-I am writing to express my strong enthusiasm for the {$jobTitle} opportunity. With my proven background as a {$headline} and hands-on expertise in {$primarySkillStr}, I am confident in my ability to immediately add value to your engineering initiatives.
-
-Throughout my work, I have focused on building scalable, reliable, and user-centric systems. Reviewing the requirements for {$companyName}, I noticed a strong emphasis on clean code, collaborative problem-solving, and efficient system architecture — areas where my core competencies and passion strongly align.
-
-I have attached my resume for your review and would welcome the chance to speak with you regarding how my technical skills and proactive mindset can support your team's upcoming milestones.
-
-Thank you for your time and consideration.
-
-Warm regards,
-
-{$candidateName}
-{$user['email']}
-{$user['phone']}
-BODY;
-        } else {
-            $subject = "Cover Letter: {$candidateName} - {$jobTitle} at {$companyName}";
-            $body = <<<BODY
-Dear Hiring Manager,
-
-Please accept this letter as an expression of my deep interest in the {$jobTitle} position at {$companyName}. Having closely followed {$companyName}'s impactful work in the industry, I am eager to contribute my skills in {$primarySkillStr} toward your ongoing product development.
-
-In my recent experience as a {$headline}, I have designed and deployed high-performance applications with strict adherence to maintainability, testability, and agile best practices. My ability to quickly learn new domain logic and bridge technical requirements with business goals has consistently enabled teams to meet release deadlines with confidence.
-
-What excites me most about {$companyName} is your dedication to engineering excellence and innovation. I am particularly eager to apply my background in {$primarySkillStr} to help solve complex technical challenges while collaborating closely with your cross-functional team.
-
-I look forward to discussing how my experience and drive make me a strong fit for {$jobTitle}. Thank you for your review and consideration.
-
-Sincerely,
-
-{$candidateName}
-{$user['email']}
-BODY;
-        }
+        $subject = "Application for {$title} — {$name}";
+        $body = $draftType === 'application_email'
+            ? "Dear {$company} Hiring Team,\n\nI am writing to apply for the {$title} position. My technical background includes {$skillStr}, and I have hands-on experience delivering maintainable web applications.\n\nI have attached my resume for your consideration and welcome the opportunity to discuss how my skills align with your engineering goals.\n\nBest regards,\n{$name}\n{$user['email']}"
+            : "Dear Hiring Manager,\n\nI am pleased to submit my application for the {$title} role at {$company}. With practical experience in {$skillStr}, I am confident in my ability to contribute effectively to your team.\n\nIn reviewing your requirements for {$title}, my focus on clean architecture, database integrity, and collaborative delivery aligns closely with what {$company} is building.\n\nThank you for your time and consideration.\n\nSincerely,\n{$name}\n{$user['email']}";
 
         return [
             'subject'    => $subject,
             'body'       => $body,
-            'model_used' => 'hirepilot-ai-mock-engine (deterministic local fallback)',
+            'model_used' => 'local-template-fallback',
             'prompt'     => $prompt,
         ];
     }

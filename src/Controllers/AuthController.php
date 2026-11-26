@@ -1,16 +1,7 @@
 <?php
 /**
- * HirePilot AI — Auth Controller
+ * HirePilot AI — Auth Controller (SRS 2.1: Session-Hardened Native Auth)
  * Author: Olied Ahmed Chowdhury (ID: 242-134-017, Batch: 7th)
- *
- * Routes:
- *   GET  /auth/login          → showLogin()
- *   POST /auth/login          → login()
- *   GET  /auth/register       → showRegister()
- *   POST /auth/register       → register()
- *   GET  /auth/logout         → logout()
- *   GET  /auth/google         → googleRedirect()
- *   GET  /auth/google/callback → googleCallback()
  */
 
 declare(strict_types=1);
@@ -21,7 +12,6 @@ use HirePilot\Core\Auth;
 use HirePilot\Core\Csrf;
 use HirePilot\Core\Flash;
 use HirePilot\Models\User;
-use HirePilot\Services\GoogleAuthService;
 
 class AuthController
 {
@@ -32,7 +22,6 @@ class AuthController
         $this->userModel = new User();
     }
 
-    // ── GET /auth/login ───────────────────────────────────────────────────────
     public function showLogin(array $params = []): void
     {
         if (Auth::check()) {
@@ -46,10 +35,8 @@ class AuthController
         require VIEWS_PATH . '/layouts/auth.php';
     }
 
-    // ── POST /auth/login ──────────────────────────────────────────────────────
     public function login(array $params = []): void
     {
-        // JSON response for AJAX, redirect for form POST
         $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']);
 
         try {
@@ -58,38 +45,35 @@ class AuthController
             $email    = trim($_POST['email'] ?? '');
             $password = $_POST['password'] ?? '';
 
-            if (empty($email) || empty($password)) {
+            if ($email === '' || $password === '') {
                 throw new \InvalidArgumentException('Email and password are required.');
             }
 
             $user = $this->userModel->findByEmail($email);
 
-            if (!$user || !$user['is_active']) {
+            if (!$user || !(int) $user['is_active']) {
                 throw new \RuntimeException('Invalid email or password.');
             }
 
-            // Google-only accounts have no password
-            if (empty($user['password_hash'])) {
-                throw new \RuntimeException('This account uses Google Sign-In. Please use the Google button.');
-            }
-
-            if (!User::verifyPassword($password, $user['password_hash'])) {
+            if (empty($user['password_hash']) || !User::verifyPassword($password, $user['password_hash'])) {
                 throw new \RuntimeException('Invalid email or password.');
             }
 
-            // Log in
             Auth::login(User::forSession($user));
-            $this->userModel->touchLastLogin((int)$user['id']);
+            $this->userModel->touchLastLogin((int) $user['id']);
             Csrf::regenerate();
 
+            $target = empty($user['onboarding_completed']) && $user['role'] !== 'admin'
+                ? '/onboarding'
+                : '/dashboard';
+
             if ($isAjax) {
-                $this->json(['success' => true, 'redirect' => BASE_URL . '/dashboard']);
+                $this->json(['success' => true, 'redirect' => BASE_URL . $target]);
                 return;
             }
 
-            Flash::success("Welcome back, {$user['name']}! 👋");
-            Auth::redirect('/dashboard');
-
+            Flash::success("Signed in as {$user['name']}.");
+            Auth::redirect($target);
         } catch (\Throwable $e) {
             if ($isAjax) {
                 $this->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -100,7 +84,6 @@ class AuthController
         }
     }
 
-    // ── GET /auth/register ────────────────────────────────────────────────────
     public function showRegister(array $params = []): void
     {
         if (Auth::check()) {
@@ -114,7 +97,6 @@ class AuthController
         require VIEWS_PATH . '/layouts/auth.php';
     }
 
-    // ── POST /auth/register ───────────────────────────────────────────────────
     public function register(array $params = []): void
     {
         $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']);
@@ -127,53 +109,45 @@ class AuthController
             $password = $_POST['password'] ?? '';
             $confirm  = $_POST['password_confirm'] ?? '';
 
-            // Validation
-            if (empty($name) || strlen($name) < 2) {
-                throw new \InvalidArgumentException('Name must be at least 2 characters.');
+            if (strlen($name) < 2) {
+                throw new \InvalidArgumentException('Full name must be at least 2 characters.');
             }
 
             if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 throw new \InvalidArgumentException('Please enter a valid email address.');
             }
 
-            if (strlen($password) < 8) {
-                throw new \InvalidArgumentException('Password must be at least 8 characters.');
-            }
-
-            if (!preg_match('/[A-Z]/', $password) || !preg_match('/[0-9]/', $password)) {
-                throw new \InvalidArgumentException('Password must contain at least one uppercase letter and one number.');
+            if (strlen($password) < 8 || !preg_match('/[A-Z]/', $password) || !preg_match('/[0-9]/', $password)) {
+                throw new \InvalidArgumentException('Password must be at least 8 characters and include an uppercase letter and a number.');
             }
 
             if ($password !== $confirm) {
                 throw new \InvalidArgumentException('Passwords do not match.');
             }
 
-            // Check existing
             if ($this->userModel->findByEmail($email)) {
                 throw new \RuntimeException('An account with this email already exists.');
             }
 
-            // Create user
             $userId = $this->userModel->create([
-                'name'          => $name,
-                'email'         => $email,
-                'password_hash' => User::hashPassword($password),
-                'role'          => 'user',
+                'name'                 => $name,
+                'email'                => $email,
+                'password_hash'        => User::hashPassword($password),
+                'role'                 => 'user',
+                'onboarding_completed' => 0,
             ]);
 
-            // Auto-login
             $user = $this->userModel->findById($userId);
             Auth::login(User::forSession($user));
             Csrf::regenerate();
 
             if ($isAjax) {
-                $this->json(['success' => true, 'redirect' => BASE_URL . '/dashboard']);
+                $this->json(['success' => true, 'redirect' => BASE_URL . '/onboarding']);
                 return;
             }
 
-            Flash::success("Welcome to HirePilot AI, {$name}! Your account is ready. 🚀");
-            Auth::redirect('/dashboard');
-
+            Flash::success('Account created. Let us complete your profile.');
+            Auth::redirect('/onboarding');
         } catch (\Throwable $e) {
             if ($isAjax) {
                 $this->json(['success' => false, 'message' => $e->getMessage()], 422);
@@ -184,83 +158,13 @@ class AuthController
         }
     }
 
-    // ── GET /auth/logout ──────────────────────────────────────────────────────
     public function logout(array $params = []): void
     {
         Auth::logout();
-        Flash::info('You have been logged out successfully.');
+        Flash::info('You have been signed out.');
         Auth::redirect('/auth/login');
     }
 
-    // ── GET /auth/google ──────────────────────────────────────────────────────
-    public function googleRedirect(array $params = []): void
-    {
-        $service = new GoogleAuthService();
-        $url     = $service->getAuthUrl();
-
-        if (!$url) {
-            Flash::error('Google Sign-In is not configured. Please use email/password.');
-            Auth::redirect('/auth/login');
-        }
-
-        header('Location: ' . $url);
-        exit;
-    }
-
-    // ── GET /auth/google/callback ─────────────────────────────────────────────
-    public function googleCallback(array $params = []): void
-    {
-        try {
-            $code = $_GET['code'] ?? '';
-            if (empty($code)) {
-                throw new \RuntimeException('Google authentication was cancelled or failed.');
-            }
-
-            $service    = new GoogleAuthService();
-            $googleUser = $service->authenticate($code);
-
-            if (!$googleUser) {
-                throw new \RuntimeException('Failed to retrieve Google account information.');
-            }
-
-            // Check if user exists
-            $user = $this->userModel->findByGoogleId($googleUser['id'])
-                 ?? $this->userModel->findByEmail($googleUser['email']);
-
-            if ($user) {
-                // Update Google tokens
-                $this->userModel->updateGoogleTokens(
-                    (int)$user['id'],
-                    $googleUser['id'],
-                    $googleUser['token'] ?? null
-                );
-            } else {
-                // Create new user from Google profile
-                $userId = $this->userModel->create([
-                    'name'          => $googleUser['name'],
-                    'email'         => $googleUser['email'],
-                    'google_id'     => $googleUser['id'],
-                    'google_token'  => $googleUser['token'] ?? null,
-                    'avatar'        => $googleUser['picture'] ?? null,
-                    'role'          => 'user',
-                ]);
-                $user = $this->userModel->findById($userId);
-            }
-
-            Auth::login(User::forSession($user));
-            $this->userModel->touchLastLogin((int)$user['id']);
-            Csrf::regenerate();
-
-            Flash::success("Welcome, {$user['name']}! Signed in with Google. 🎉");
-            Auth::redirect('/dashboard');
-
-        } catch (\Throwable $e) {
-            Flash::error($e->getMessage());
-            Auth::redirect('/auth/login');
-        }
-    }
-
-    // ── Helper: JSON response ─────────────────────────────────────────────────
     private function json(array $data, int $status = 200): void
     {
         http_response_code($status);
@@ -269,4 +173,3 @@ class AuthController
         exit;
     }
 }
-

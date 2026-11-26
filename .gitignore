@@ -1,33 +1,24 @@
-# Environment & Secrets
 .env
 *.env.local
-
-# Dependencies
 vendor/
 
-# Uploads (keep folder, ignore files)
 storage/uploads/*
 !storage/uploads/.gitkeep
 
-# Logs & Cache
 storage/logs/*
 !storage/logs/.gitkeep
+
 storage/cache/*
 !storage/cache/.gitkeep
 
-# OS & IDE
+storage/database/*
+!storage/database/.gitkeep
+
+storage/sessions/*
+!storage/sessions/.gitkeep
+
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-
-# PHP
 *.log
-
-# Node (if used for tooling)
-node_modules/
-npm-debug.log
-

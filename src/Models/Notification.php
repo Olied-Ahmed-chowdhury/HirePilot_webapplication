@@ -1,6 +1,6 @@
 <?php
 /**
- * HirePilot AI — Notification Model
+ * HirePilot AI — Notification Model (ANSI SQL: MySQL + SQLite)
  * Author: Olied Ahmed Chowdhury (ID: 242-134-017, Batch: 7th)
  */
 
@@ -22,18 +22,15 @@ class Notification
     public function create(array $data): int
     {
         $this->db->execute(
-            "INSERT INTO notifications
-                (user_id, type, title, message, link, reference_id, reference_type, is_read, created_at)
-             VALUES
-                (:user_id, :type, :title, :message, :link, :reference_id, :reference_type, 0, NOW())",
+            "INSERT INTO notifications (user_id, type, title, message, link, is_read, created_at)
+             VALUES (:user_id, :type, :title, :message, :link, 0, :ca)",
             [
-                ':user_id'        => $data['user_id'],
-                ':type'           => $data['type'],
-                ':title'          => $data['title'],
-                ':message'        => $data['message'],
-                ':link'           => $data['link'] ?? null,
-                ':reference_id'   => $data['reference_id'] ?? null,
-                ':reference_type' => $data['reference_type'] ?? null,
+                ':user_id' => $data['user_id'],
+                ':type'    => $data['type'] ?? 'system',
+                ':title'   => $data['title'],
+                ':message' => $data['message'],
+                ':link'    => $data['link'] ?? null,
+                ':ca'      => date('Y-m-d H:i:s'),
             ]
         );
 
@@ -42,9 +39,10 @@ class Notification
 
     public function getRecentByUser(int $userId, int $limit = 10): array
     {
+        $limit = max(1, min(50, $limit));
         return $this->db->fetchAll(
-            "SELECT * FROM notifications WHERE user_id = :uid ORDER BY created_at DESC LIMIT :lim",
-            [':uid' => $userId, ':lim' => $limit]
+            "SELECT * FROM notifications WHERE user_id = :uid ORDER BY created_at DESC LIMIT {$limit}",
+            [':uid' => $userId]
         );
     }
 
@@ -55,7 +53,7 @@ class Notification
             [':uid' => $userId]
         );
 
-        return (int)($row['c'] ?? 0);
+        return (int) ($row['c'] ?? 0);
     }
 
     public function markAsRead(int $id, int $userId): bool

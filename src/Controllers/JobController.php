@@ -56,7 +56,7 @@ class JobController
         $rankedJobs = $this->matchingService->rankJobs(
             $result['jobs'],
             $userSkills ?: [],
-            $user['remote_pref'] ?? 'any'
+            $user['work_preference'] ?? 'any'
         );
 
         $result['jobs'] = $rankedJobs;
@@ -99,7 +99,7 @@ class JobController
         $userModel  = new User();
         $user       = $userModel->findById($userId);
         $userSkills = !empty($user['skills']) ? (is_string($user['skills']) ? json_decode($user['skills'], true) : $user['skills']) : [];
-        $matchScore = $this->matchingService->calculateScore($job, $userSkills ?: [], $user['remote_pref'] ?? 'any');
+        $matchScore = $this->matchingService->calculateScore($job, $userSkills ?: [], $user['work_preference'] ?? 'any');
 
         $pageTitle   = $job['title'] . ' at ' . $job['company'];
         $navbarTitle = 'Job Details';

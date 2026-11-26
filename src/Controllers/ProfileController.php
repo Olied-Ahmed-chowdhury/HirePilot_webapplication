@@ -1,6 +1,6 @@
 <?php
 /**
- * HirePilot AI — Profile Controller
+ * HirePilot AI — Profile Controller (SRS 2.2)
  * Author: Olied Ahmed Chowdhury (ID: 242-134-017, Batch: 7th)
  */
 
@@ -23,11 +23,10 @@ class ProfileController
         $this->userModel = new User();
     }
 
-    // ── GET /profile ──────────────────────────────────────────────────────────
     public function show(array $params = []): void
     {
-        $user = $this->userModel->findById(Auth::id());
-        $pageTitle = 'My Profile';
+        $user        = $this->userModel->findById(Auth::id());
+        $pageTitle   = 'Profile & Preferences';
         $navbarTitle = 'Profile & Preferences';
 
         ob_start();
@@ -36,54 +35,52 @@ class ProfileController
         require VIEWS_PATH . '/layouts/app.php';
     }
 
-    // ── POST /profile ─────────────────────────────────────────────────────────
     public function update(array $params = []): void
     {
         try {
             Csrf::verify();
             $userId = Auth::id();
 
-            $name           = trim($_POST['name'] ?? '');
-            $headline       = trim($_POST['headline'] ?? '');
-            $bio            = trim($_POST['bio'] ?? '');
-            $phone          = trim($_POST['phone'] ?? '');
-            $location       = trim($_POST['location'] ?? '');
-            $remotePref     = $_POST['remote_pref'] ?? 'any';
-            $targetRole     = trim($_POST['target_role'] ?? '');
-            $experienceYrs  = (int)($_POST['experience_yrs'] ?? 0);
-            $linkedinUrl    = trim($_POST['linkedin_url'] ?? '');
-            $githubUrl      = trim($_POST['github_url'] ?? '');
-            $portfolioUrl   = trim($_POST['portfolio_url'] ?? '');
+            $name              = trim($_POST['name'] ?? '');
+            $headline          = trim($_POST['headline'] ?? '');
+            $bio               = trim($_POST['bio'] ?? '');
+            $phone             = trim($_POST['phone'] ?? '');
+            $preferredLocation = trim($_POST['preferred_location'] ?? '');
+            $workPreference    = $_POST['work_preference'] ?? 'any';
+            $targetRole        = trim($_POST['target_role'] ?? '');
+            $experienceLevel   = $_POST['experience_level'] ?? 'mid';
+            $experienceYrs     = max(0, (int) ($_POST['experience_yrs'] ?? 0));
+            $careerGoals       = trim($_POST['career_goals'] ?? '');
 
-            // Skills JSON parsing
-            $rawSkills = $_POST['skills'] ?? '[]';
-            $decoded = json_decode($rawSkills, true);
-            $skillsJson = is_array($decoded) ? json_encode(array_values(array_filter(array_map('trim', $decoded)))) : json_encode([]);
+            $rawSkills  = $_POST['skills'] ?? '[]';
+            $decoded    = json_decode($rawSkills, true);
+            $skillsJson = is_array($decoded)
+                ? json_encode(array_values(array_filter(array_map('trim', $decoded))))
+                : json_encode([]);
 
-            if (empty($name)) {
+            if ($name === '') {
                 throw new \InvalidArgumentException('Full Name cannot be empty.');
             }
 
             $this->userModel->updateProfile($userId, [
-                'name'           => $name,
-                'headline'       => $headline,
-                'bio'            => $bio,
-                'phone'          => $phone,
-                'location'       => $location,
-                'remote_pref'    => $remotePref,
-                'target_role'    => $targetRole,
-                'experience_yrs' => $experienceYrs,
-                'skills'         => $skillsJson,
-                'linkedin_url'   => $linkedinUrl,
-                'github_url'     => $githubUrl,
-                'portfolio_url'  => $portfolioUrl,
+                'name'                 => $name,
+                'headline'             => $headline,
+                'bio'                  => $bio,
+                'phone'                => $phone,
+                'preferred_location'   => $preferredLocation,
+                'work_preference'      => $workPreference,
+                'target_role'          => $targetRole,
+                'experience_level'     => $experienceLevel,
+                'experience_yrs'       => $experienceYrs,
+                'skills'               => $skillsJson,
+                'career_goals'         => $careerGoals,
+                'onboarding_completed' => 1,
             ]);
 
-            // Update session data
             $freshUser = $this->userModel->findById($userId);
             $_SESSION['user'] = User::forSession($freshUser);
 
-            Flash::success('Profile updated successfully!');
+            Flash::success('Profile and preferences saved.');
         } catch (\Throwable $e) {
             Flash::error($e->getMessage());
         }
@@ -91,11 +88,10 @@ class ProfileController
         Auth::redirect('/profile');
     }
 
-    // ── GET /profile/change-password ──────────────────────────────────────────
     public function showChangePassword(array $params = []): void
     {
-        $user = $this->userModel->findById(Auth::id());
-        $pageTitle = 'Security Settings';
+        $user        = $this->userModel->findById(Auth::id());
+        $pageTitle   = 'Security Settings';
         $navbarTitle = 'Password & Security';
 
         ob_start();
@@ -104,23 +100,19 @@ class ProfileController
         require VIEWS_PATH . '/layouts/app.php';
     }
 
-    // ── POST /profile/change-password ─────────────────────────────────────────
     public function updatePassword(array $params = []): void
     {
         try {
             Csrf::verify();
             $userId = Auth::id();
-            $user = $this->userModel->findById($userId);
+            $user   = $this->userModel->findById($userId);
 
             $currentPass = $_POST['current_password'] ?? '';
             $newPass     = $_POST['new_password'] ?? '';
             $confirmPass = $_POST['confirm_password'] ?? '';
 
-            // If account has password, verify current password
-            if (!empty($user['password_hash'])) {
-                if (!User::verifyPassword($currentPass, $user['password_hash'])) {
-                    throw new \InvalidArgumentException('Current password does not match.');
-                }
+            if (!User::verifyPassword($currentPass, $user['password_hash'])) {
+                throw new \InvalidArgumentException('Current password does not match.');
             }
 
             if (strlen($newPass) < 8 || !preg_match('/[A-Z]/', $newPass) || !preg_match('/[0-9]/', $newPass)) {
@@ -131,10 +123,8 @@ class ProfileController
                 throw new \InvalidArgumentException('New password and confirmation do not match.');
             }
 
-            $newHash = User::hashPassword($newPass);
-            $this->userModel->updatePassword($userId, $newHash);
-
-            Flash::success('Password updated successfully! Please keep it secure.');
+            $this->userModel->updatePassword($userId, User::hashPassword($newPass));
+            Flash::success('Password updated successfully.');
         } catch (\Throwable $e) {
             Flash::error($e->getMessage());
         }

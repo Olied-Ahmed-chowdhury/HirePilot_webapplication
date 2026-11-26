@@ -224,7 +224,8 @@ function initNotifications() {
 
   async function loadNotifications() {
     try {
-      const data = await Http.get('/notifications/fetch');
+      const base = window.BASE_URL || '';
+      const data = await Http.get(`${base}/notifications/fetch`);
       if (badge) {
         badge.textContent = data.unread || '';
         badge.style.display = data.unread ? 'flex' : 'none';
@@ -254,7 +255,7 @@ function initNotifications() {
       el.addEventListener('click', async () => {
         const id = el.dataset.id;
         el.classList.remove('unread');
-        try { await Http.post(`/notifications/${id}/read`); loadNotifications(); } catch {}
+        try { const base = window.BASE_URL || ''; await Http.post(`${base}/notifications/${id}/read`); loadNotifications(); } catch {}
       });
     });
   }

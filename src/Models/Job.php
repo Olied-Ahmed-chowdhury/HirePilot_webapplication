@@ -168,4 +168,40 @@ class Job
     {
         return (int) ($this->db->fetchOne("SELECT COUNT(*) AS c FROM jobs")['c'] ?? 0);
     }
+
+    public function countExternal(): int
+    {
+        return (int) ($this->db->fetchOne(
+            "SELECT COUNT(*) AS c FROM jobs WHERE external_url IS NOT NULL AND external_url != ''"
+        )['c'] ?? 0);
+    }
+
+    /**
+     * Insert a live external job if not already present (matched by external_url or title+company).
+     *
+     * @return array{id:int, inserted:bool}
+     */
+    public function upsertExternal(array $data): array
+    {
+        if (!empty($data['external_url'])) {
+            $existing = $this->db->fetchOne(
+                "SELECT id FROM jobs WHERE external_url = :url LIMIT 1",
+                [':url' => $data['external_url']]
+            );
+            if ($existing) {
+                return ['id' => (int) $existing['id'], 'inserted' => false];
+            }
+        }
+
+        $existingByTitle = $this->db->fetchOne(
+            "SELECT id FROM jobs WHERE title = :title AND company = :company LIMIT 1",
+            [':title' => $data['title'], ':company' => $data['company']]
+        );
+        if ($existingByTitle) {
+            return ['id' => (int) $existingByTitle['id'], 'inserted' => false];
+        }
+
+        $id = $this->create($data);
+        return ['id' => $id, 'inserted' => true];
+    }
 }

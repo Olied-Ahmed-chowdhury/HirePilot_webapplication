@@ -20,6 +20,7 @@ use HirePilot\Controllers\EmailDraftController;
 use HirePilot\Controllers\ApplicationController;
 use HirePilot\Controllers\NotificationController;
 use HirePilot\Controllers\AdminController;
+use HirePilot\Controllers\AssistantController;
 
 // Root
 Router::get('/', function () {
@@ -57,9 +58,14 @@ Router::get('/resume/{id}/download', [ResumeController::class, 'download']);
 Router::post('/resume/{id}/primary', [ResumeController::class, 'setPrimary']);
 Router::post('/resume/{id}/delete',  [ResumeController::class, 'delete']);
 
-// Job Discovery (SRS 2.4)
-Router::get('/jobs',      [JobController::class, 'index']);
-Router::get('/jobs/{id}', [JobController::class, 'show']);
+// Job Discovery (SRS 2.4 + Live Fantastic.jobs & Apify LinkedIn)
+Router::get('/jobs',              [JobController::class, 'index']);
+Router::post('/jobs/sync',        [JobController::class, 'syncLive']);
+Router::post('/jobs/match-resume',[JobController::class, 'matchFromResume']);
+Router::get('/jobs/{id}',         [JobController::class, 'show']);
+
+// Floating AI Guide Chatbot
+Router::post('/assistant/chat',   [AssistantController::class, 'chat']);
 
 // AI Drafting & Approval Workflow (SRS 2.5)
 Router::get('/emails',               [EmailDraftController::class, 'index']);

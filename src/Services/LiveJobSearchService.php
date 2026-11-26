@@ -42,13 +42,11 @@ class LiveJobSearchService
             return ['ok' => false, 'fetched' => 0, 'inserted' => 0, 'source' => 'Fantastic.jobs', 'error' => 'Fantastic.jobs API key is not configured.'];
         }
 
+        $fetchLimit = trim($query) !== '' ? 50 : max(1, min(50, $limit));
         $params = [
             'time_frame' => '7d',
-            'limit'      => max(1, min(50, $limit)),
+            'limit'      => $fetchLimit,
         ];
-        if (trim($query) !== '') {
-            $params['title_filter'] = trim($query);
-        }
 
         $url = $this->fantasticUrl . '?' . http_build_query($params);
         $resp = $this->httpGetJson($url, [
@@ -61,16 +59,36 @@ class LiveJobSearchService
         }
 
         $items = is_array($resp['data']) ? $resp['data'] : [];
-        // If title_filter was too narrow and returned 0 items, retry broad 7d feed
-        if (empty($items) && trim($query) !== '') {
-            $fallbackUrl = $this->fantasticUrl . '?' . http_build_query(['time_frame' => '7d', 'limit' => max(1, min(30, $limit))]);
-            $fallback = $this->httpGetJson($fallbackUrl, [
-                'Authorization: Bearer ' . $this->fantasticKey,
-                'Content-Type: application/json',
-            ], 25);
-            if ($fallback['ok'] && is_array($fallback['data'])) {
-                $items = $fallback['data'];
+
+        // If user provided a query/resume keywords, prioritize matching live jobs first
+        if (trim($query) !== '' && !empty($items)) {
+            $terms = array_values(array_filter(preg_split('/[\s,]+/', strtolower(trim($query))) ?: []));
+            $matched = [];
+            $others  = [];
+            foreach ($items as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $haystack = strtolower(
+                    ($item['title'] ?? '') . ' ' .
+                    ($item['organization'] ?? '') . ' ' .
+                    ($item['ai_core_responsibilities'] ?? '') . ' ' .
+                    implode(' ', is_array($item['ai_key_skills'] ?? null) ? $item['ai_key_skills'] : [])
+                );
+                $hit = false;
+                foreach ($terms as $t) {
+                    if (strlen($t) >= 2 && str_contains($haystack, $t)) {
+                        $hit = true;
+                        break;
+                    }
+                }
+                if ($hit) {
+                    $matched[] = $item;
+                } else {
+                    $others[] = $item;
+                }
             }
+            $items = array_slice(!empty($matched) ? array_merge($matched, $others) : $items, 0, max(1, min(50, $limit)));
         }
 
         $inserted = 0;
@@ -113,7 +131,7 @@ class LiveJobSearchService
                 'limit'    => max(1, min(20, $limit)),
             ];
 
-            $resp = $this->httpPostJson($url, $payload, ['Content-Type: application/json'], 45);
+            $resp = $this->httpPostJson($url, $payload, ['Content-Type: application/json'], 20);
             if ($resp['ok'] && is_array($resp['data']) && count($resp['data']) > 0) {
                 $inserted = 0;
                 foreach ($resp['data'] as $item) {

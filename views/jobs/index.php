@@ -13,9 +13,19 @@ $isRemote    = $_GET['is_remote'] ?? '';
 <div class="page-header">
   <div>
     <h2 class="page-title">Job Discovery</h2>
-    <p class="page-subtitle">Openings ranked by relevance to your skills and work preferences</p>
+    <p class="page-subtitle">Live ATS &amp; LinkedIn openings ranked by your resume, skills, and work preferences (<?= (int) ($liveCount ?? 0) ?> live jobs synced)</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <button type="button" class="btn btn-outline-primary btn-sm" id="btn-sync-live" onclick="syncLiveJobs()">
+      <i class="bi bi-arrow-repeat me-1"></i>Sync Live Jobs (Fantastic.jobs)
+    </button>
+    <button type="button" class="btn btn-primary btn-sm" id="btn-match-resume" onclick="matchResumeLinkedIn()">
+      <i class="bi bi-linkedin me-1"></i>Match My Resume (LinkedIn)
+    </button>
   </div>
 </div>
+
+<div id="live-sync-status" class="alert alert-info py-2 px-3 small d-none mb-3"></div>
 
 <div class="hp-card p-3 mb-3">
   <form action="<?= BASE_URL ?>/jobs" method="GET" class="row g-2 align-items-center">
@@ -77,7 +87,12 @@ $isRemote    = $_GET['is_remote'] ?? '';
           <div>
             <div class="d-flex justify-content-between align-items-start mb-3">
               <div class="job-company-logo"><i class="bi bi-building text-secondary"></i></div>
-              <span class="badge bg-light text-dark border">Match: <?= $matchScore ?>%</span>
+              <div class="d-flex gap-1 align-items-center">
+                <?php if (!empty($job['external_url'])): ?>
+                  <span class="badge bg-success-subtle text-success border border-success-subtle">Live</span>
+                <?php endif; ?>
+                <span class="badge bg-light text-dark border">Match: <?= $matchScore ?>%</span>
+              </div>
             </div>
 
             <h5 class="job-title mb-1">
@@ -113,7 +128,12 @@ $isRemote    = $_GET['is_remote'] ?? '';
 
           <div class="pt-3 border-top d-flex gap-2 justify-content-between align-items-center">
             <a href="<?= BASE_URL ?>/emails/create?job_id=<?= $job['id'] ?>" class="btn btn-sm btn-outline-primary">Draft AI</a>
-            <a href="<?= BASE_URL ?>/jobs/<?= $job['id'] ?>" class="btn btn-sm btn-primary">View Details</a>
+            <div class="d-flex gap-1">
+              <?php if (!empty($job['external_url'])): ?>
+                <a href="<?= htmlspecialchars($job['external_url']) ?>" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline-dark" title="Open original job posting">Apply <i class="bi bi-box-arrow-up-right ms-1"></i></a>
+              <?php endif; ?>
+              <a href="<?= BASE_URL ?>/jobs/<?= $job['id'] ?>" class="btn btn-sm btn-primary">Details</a>
+            </div>
           </div>
         </div>
       </div>
@@ -134,3 +154,51 @@ $isRemote    = $_GET['is_remote'] ?? '';
     </nav>
   <?php endif; ?>
 <?php endif; ?>
+
+<script>
+async function runJobSync(endpoint, btnId, payload) {
+  const btn = document.getElementById(btnId);
+  const statusEl = document.getElementById('live-sync-status');
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+  const origHtml = btn.innerHTML;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="hp-spinner me-1"></span>Fetching Live Jobs...';
+  statusEl.className = 'alert alert-info py-2 px-3 small mb-3';
+  statusEl.textContent = 'Connecting to live job API... please wait.';
+
+  try {
+    const res = await fetch(window.BASE_URL + endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrf },
+      body: JSON.stringify(Object.assign({ _csrf_token: csrf }, payload))
+    });
+    const data = await res.json();
+    if (data.ok) {
+      statusEl.className = 'alert alert-success py-2 px-3 small mb-3';
+      statusEl.textContent = data.message + ' Refreshing list...';
+      setTimeout(() => window.location.reload(), 900);
+    } else {
+      statusEl.className = 'alert alert-warning py-2 px-3 small mb-3';
+      statusEl.textContent = data.message || data.error || 'Could not sync live jobs.';
+      btn.disabled = false;
+      btn.innerHTML = origHtml;
+    }
+  } catch (e) {
+    statusEl.className = 'alert alert-danger py-2 px-3 small mb-3';
+    statusEl.textContent = 'Network error while contacting job API.';
+    btn.disabled = false;
+    btn.innerHTML = origHtml;
+  }
+}
+
+function syncLiveJobs() {
+  const q = <?= json_encode($_GET['q'] ?? '') ?>;
+  runJobSync('/jobs/sync', 'btn-sync-live', { q: q });
+}
+
+function matchResumeLinkedIn() {
+  const resumeQuery = <?= json_encode($resumeQuery ?? '') ?>;
+  runJobSync('/jobs/match-resume', 'btn-match-resume', { keywords: resumeQuery });
+}
+</script>

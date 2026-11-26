@@ -15,18 +15,21 @@ use HirePilot\Models\Job;
 use HirePilot\Models\Resume;
 use HirePilot\Models\User;
 use HirePilot\Services\JobMatchingService;
+use HirePilot\Services\LiveJobSearchService;
 use HirePilot\Core\Database;
 
 class JobController
 {
     private Job $jobModel;
     private JobMatchingService $matchingService;
+    private LiveJobSearchService $liveService;
 
     public function __construct()
     {
         Auth::require();
-        $this->jobModel = new Job();
+        $this->jobModel        = new Job();
         $this->matchingService = new JobMatchingService();
+        $this->liveService     = new LiveJobSearchService();
     }
 
     // ── GET /jobs ─────────────────────────────────────────────────────────────
@@ -34,7 +37,12 @@ class JobController
     {
         $userId = Auth::id();
         $userModel = new User();
-        $user = $userModel->findById($userId);
+        $user = $userModel->findById($userId) ?? [];
+
+        // Auto-fetch real live jobs from Fantastic.jobs if no external live jobs exist yet
+        if ($this->jobModel->countExternal() === 0) {
+            $this->liveService->syncFromFantasticJobs($userId, '', 15);
+        }
 
         $page = max(1, (int)($_GET['page'] ?? 1));
         $filters = [
@@ -60,6 +68,8 @@ class JobController
         );
 
         $result['jobs'] = $rankedJobs;
+        $resumeQuery    = $this->liveService->buildQueryFromResumeAndProfile($userId, $user);
+        $liveCount      = $this->jobModel->countExternal();
 
         $pageTitle = 'Explore Jobs';
         $navbarTitle = 'Job Discovery';
@@ -68,6 +78,69 @@ class JobController
         require VIEWS_PATH . '/jobs/index.php';
         $content = ob_get_clean();
         require VIEWS_PATH . '/layouts/app.php';
+    }
+
+    // ── POST /jobs/sync ───────────────────────────────────────────────────────
+    public function syncLive(array $params = []): void
+    {
+        header('Content-Type: application/json');
+
+        if (!Csrf::validate()) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'CSRF token mismatch. Refresh and try again.']);
+            return;
+        }
+
+        $input = json_decode((string) file_get_contents('php://input'), true) ?: $_POST;
+        $query = trim((string) ($input['q'] ?? ''));
+
+        $res = $this->liveService->syncFromFantasticJobs(Auth::id(), $query, 15);
+        echo json_encode([
+            'ok'       => $res['ok'],
+            'fetched'  => $res['fetched'],
+            'inserted' => $res['inserted'],
+            'source'   => $res['source'],
+            'error'    => $res['error'],
+            'message'  => $res['ok']
+                ? "Synced {$res['fetched']} live jobs from {$res['source']} ({$res['inserted']} new added)."
+                : ($res['error'] ?? 'Could not fetch live jobs.'),
+        ]);
+    }
+
+    // ── POST /jobs/match-resume ───────────────────────────────────────────────
+    public function matchFromResume(array $params = []): void
+    {
+        header('Content-Type: application/json');
+
+        if (!Csrf::validate()) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'CSRF token mismatch. Refresh and try again.']);
+            return;
+        }
+
+        $userId    = Auth::id();
+        $userModel = new User();
+        $user      = $userModel->findById($userId) ?? [];
+
+        $input    = json_decode((string) file_get_contents('php://input'), true) ?: $_POST;
+        $keywords = trim((string) ($input['keywords'] ?? ''));
+        if ($keywords === '') {
+            $keywords = $this->liveService->buildQueryFromResumeAndProfile($userId, $user);
+        }
+        $location = trim((string) ($user['preferred_location'] ?? ''));
+
+        $res = $this->liveService->syncFromApifyLinkedIn($userId, $keywords, $location, 10);
+        echo json_encode([
+            'ok'       => $res['ok'],
+            'fetched'  => $res['fetched'],
+            'inserted' => $res['inserted'],
+            'source'   => $res['source'],
+            'query'    => $res['query'],
+            'error'    => $res['error'],
+            'message'  => $res['ok']
+                ? "Found {$res['fetched']} jobs for \"{$res['query']}\" via {$res['source']} ({$res['inserted']} new added)."
+                : ($res['error'] ?? 'Could not match LinkedIn jobs.'),
+        ]);
     }
 
     // ── GET /jobs/{id} ────────────────────────────────────────────────────────

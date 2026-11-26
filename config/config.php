@@ -90,6 +90,13 @@ $CONFIG = [
         'lifetime' => (int) env('SESSION_LIFETIME', 7200),
         'secure'   => env('SESSION_SECURE', false),
     ],
+
+    'jobs_api' => [
+        'fantastic_key' => env('FANTASTIC_JOBS_API_KEY', ''),
+        'fantastic_url' => env('FANTASTIC_JOBS_API_URL', 'https://data.fantastic.jobs/v1/active-ats'),
+        'apify_token'   => env('APIFY_API_TOKEN', ''),
+        'apify_actor'   => env('APIFY_LINKEDIN_ACTOR', 'bebity~linkedin-jobs-scraper'),
+    ],
 ];
 
 function config(string $key, mixed $default = null): mixed
